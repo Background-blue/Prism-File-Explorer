@@ -1,5 +1,6 @@
 package com.raival.compose.file.explorer.screen.viewer.image.ui
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
@@ -87,6 +88,7 @@ import com.raival.compose.file.explorer.common.read
 import com.raival.compose.file.explorer.common.showMsg
 import com.raival.compose.file.explorer.screen.viewer.ViewerActivity
 import com.raival.compose.file.explorer.screen.viewer.ViewerInstance
+import com.raival.compose.file.explorer.screen.viewer.image.ImageNavigationHelper
 import com.raival.compose.file.explorer.screen.viewer.image.misc.ImageInfo
 import com.raival.compose.file.explorer.screen.viewer.image.misc.ImageInfo.Companion.extractImageInfo
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
@@ -113,13 +115,18 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     var rotationAngle by remember { mutableFloatStateOf(0f) }
     var imageDimensions by remember { mutableStateOf("" to "") }
     var contentScale by remember { mutableStateOf(ContentScale.Fit) }
+    
+    // Swipe navigation state
+    var currentImageUri by remember { mutableStateOf(instance.uri) }
     val context = LocalContext.current
+    val imageNavigationHelper = remember { ImageNavigationHelper(context) }
 
     // Load image data
-    LaunchedEffect(instance.uri) {
+    LaunchedEffect(currentImageUri) {
         try {
-            imageData = instance.uri.read()
+            imageData = currentImageUri.read()
             isLoading = false
+            isError = false
         } catch (e: Exception) {
             logger.logError(e)
             isError = true
@@ -131,7 +138,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     LaunchedEffect(imageData, imageDimensions.first) {
         if (imageData.isNotEmpty() && imageDimensions.first.isNotEmpty()) {
             imageInfo =
-                extractImageInfo(instance.uri, imageDimensions.first, imageDimensions.second)
+                extractImageInfo(currentImageUri, imageDimensions.first, imageDimensions.second)
         }
     }
 
@@ -159,7 +166,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
 
                 ZoomableAsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(instance.uri)
+                        .data(currentImageUri)
                         .listener(
                             onSuccess = { _, state ->
                                 image = state.image
@@ -182,6 +189,25 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         .fillMaxSize()
                         .graphicsLayer { rotationZ = rotationAngle }
                         .background(imageBackgroundColors[currentImageBackgroundColorIndex])
+                        // Add swipe gesture handler
+                        .swipeGestureHandler(
+                            onSwipeLeft = {
+                                imageNavigationHelper.getNextImage(currentImageUri)?.let {
+                                    currentImageUri = it
+                                    rotationAngle = 0f
+                                    imageDimensions = "" to ""
+                                    isLoading = true
+                                }
+                            },
+                            onSwipeRight = {
+                                imageNavigationHelper.getPreviousImage(currentImageUri)?.let {
+                                    currentImageUri = it
+                                    rotationAngle = 0f
+                                    imageDimensions = "" to ""
+                                    isLoading = true
+                                }
+                            }
+                        )
                 )
 
                 // Extract dominant color
@@ -316,8 +342,8 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         onEdit = {
                             val editIntent = Intent(Intent.ACTION_EDIT)
                             val mimeType =
-                                context.contentResolver.getType(instance.uri) ?: "image/*"
-                            editIntent.setDataAndType(instance.uri, mimeType)
+                                context.contentResolver.getType(currentImageUri) ?: "image/*"
+                            editIntent.setDataAndType(currentImageUri, mimeType)
                             editIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                             val chooser = Intent.createChooser(
                                 editIntent,
