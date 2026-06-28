@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Bundle
 import androidx.core.content.FileProvider
 import com.anggrayudi.storage.file.getBasePath
 import com.anggrayudi.storage.file.mimeType
@@ -246,6 +247,11 @@ class LocalFileHolder(val file: File) : ContentHolder() {
             )
             setPackage(packageName)
             setClassName(packageName, className)
+            
+            // Pass parent directory for image gallery swipe navigation
+            if (packageName == context.packageName && className == ImageViewerActivity::class.java.name) {
+                putExtra("parent_directory", file.parentFile?.absolutePath)
+            }
         }
 
         if (intent.resolveActivity(globalClass.packageManager) != null) {

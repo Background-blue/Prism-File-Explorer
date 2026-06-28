@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +71,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -87,14 +90,20 @@ import com.raival.compose.file.explorer.common.read
 import com.raival.compose.file.explorer.common.showMsg
 import com.raival.compose.file.explorer.screen.viewer.ViewerActivity
 import com.raival.compose.file.explorer.screen.viewer.ViewerInstance
+import com.raival.compose.file.explorer.screen.viewer.image.ImageViewerInstance
 import com.raival.compose.file.explorer.screen.viewer.image.misc.ImageInfo
 import com.raival.compose.file.explorer.screen.viewer.image.misc.ImageInfo.Companion.extractImageInfo
+import kotlinx.coroutines.launch
 import me.saket.telephoto.zoomable.coil3.ZoomableAsyncImage
+import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImageViewerScreen(instance: ViewerInstance) {
+    val imageInstance = instance as ImageViewerInstance
     val defaultColor = MaterialTheme.colorScheme.surface
+    val coroutineScope = rememberCoroutineScope()
+    
     var dominantColor by remember { mutableStateOf(defaultColor) }
     var secondaryColor by remember { mutableStateOf(defaultColor) }
     val imageBackgroundColors = arrayListOf(
@@ -104,8 +113,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
         Color.Black
     )
     var currentImageBackgroundColorIndex by remember { mutableIntStateOf(0) }
-    var imageData by remember { mutableStateOf(ByteArray(0)) }
-    var isLoading by remember { mutableStateOf(true) }
+    var imageData by remember { mutableStateOf(ByteArray(0)) }    var isLoading by remember { mutableStateOf(true) }
     var isError by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
@@ -113,12 +121,16 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     var rotationAngle by remember { mutableFloatStateOf(0f) }
     var imageDimensions by remember { mutableStateOf("" to "") }
     var contentScale by remember { mutableStateOf(ContentScale.Fit) }
+    var swipeOffset by remember { mutableFloatStateOf(0f) }
+    var isSwipingNext by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val currentImageUri by remember { mutableStateOf(imageInstance.getCurrentImage()) }
 
     // Load image data
-    LaunchedEffect(instance.uri) {
+    LaunchedEffect(imageInstance.currentImageIndex) {
         try {
-            imageData = instance.uri.read()
+            isLoading = true
+            imageData = imageInstance.getCurrentImage().read()
             isLoading = false
         } catch (e: Exception) {
             logger.logError(e)
@@ -130,8 +142,11 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     // Extract image info when image is loaded
     LaunchedEffect(imageData, imageDimensions.first) {
         if (imageData.isNotEmpty() && imageDimensions.first.isNotEmpty()) {
-            imageInfo =
-                extractImageInfo(instance.uri, imageDimensions.first, imageDimensions.second)
+            imageInfo = extractImageInfo(
+                imageInstance.getCurrentImage(),
+                imageDimensions.first,
+                imageDimensions.second
+            )
         }
     }
 
@@ -154,35 +169,128 @@ fun ImageViewerScreen(instance: ViewerInstance) {
             })
 
             else -> {
-                // Main image with zoom and rotation
+                // Main image with zoom, rotation and swipe
                 var image by remember { mutableStateOf<Image?>(null) }
+                var scaleX by remember { mutableFloatStateOf(1f) }
+                var opacity by remember { mutableFloatStateOf(1f) }
 
-                ZoomableAsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
-                        .data(instance.uri)
-                        .listener(
-                            onSuccess = { _, state ->
-                                image = state.image
-                                image?.let {
-                                    imageDimensions = "${it.width}" to "${it.height}"
-                                }
-                            },
-                            onError = { _, error ->
-                                logger.logError(error.throwable)
-                                isError = true
-                                isLoading = false
-                            }
-                        ).build(),
-                    contentDescription = null,
-                    contentScale = contentScale,
-                    onClick = {
-                        showControls = !showControls
-                    },
+                Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { rotationZ = rotationAngle }
-                        .background(imageBackgroundColors[currentImageBackgroundColorIndex])
-                )
+                        .pointerInput(Unit) {
+                            detectHorizontalDragGestures(
+                                onDragEnd = {
+                                    val threshold = 100f
+                                    when {
+                                        swipeOffset > threshold && imageInstance.hasPreviousImage() -> {
+                                            // Swipe right - previous image
+                                            coroutineScope.launch {
+                                                imageInstance.previousImage()
+                                                swipeOffset = 0f
+                                                scaleX = 1f
+                                                opacity = 1f
+                                            }
+                                        }
+                                        swipeOffset < -threshold && imageInstance.hasNextImage() -> {
+                                            // Swipe left - next image
+                                            coroutineScope.launch {
+                                                imageInstance.nextImage()
+                                                swipeOffset = 0f
+                                                scaleX = 1f
+                                                opacity = 1f
+                                            }
+                                        }
+                                        else -> {
+                                            swipeOffset = 0f
+                                            scaleX = 1f
+                                            opacity = 1f
+                                        }
+                                    }
+                                },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    swipeOffset += dragAmount
+                                    // Progressive scale and opacity based on drag distance
+                                    val dragProgress = (swipeOffset.absoluteValue / 200f).coerceIn(0f, 1f)
+                                    scaleX = 1f - (dragProgress * 0.15f)
+                                    opacity = 1f - (dragProgress * 0.3f)
+                                    isSwipingNext = swipeOffset < 0
+                                }
+                            )
+                        }
+                ) {
+                    // Previous image preview (right side)
+                    if (imageInstance.hasPreviousImage() && swipeOffset > 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = (swipeOffset / 200f).coerceIn(0f, 0.5f)
+                                }
+                        ) {
+                            ZoomableAsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(imageInstance.imageList.getOrNull(imageInstance.currentImageIndex - 1))
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    // Next image preview (left side)
+                    if (imageInstance.hasNextImage() && swipeOffset < 0) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    alpha = (-swipeOffset / 200f).coerceIn(0f, 0.5f)
+                                }
+                        ) {
+                            ZoomableAsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(imageInstance.imageList.getOrNull(imageInstance.currentImageIndex + 1))
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    // Current image
+                    ZoomableAsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(imageInstance.getCurrentImage())
+                            .listener(
+                                onSuccess = { _, state ->
+                                    image = state.image
+                                    image?.let {
+                                        imageDimensions = "${it.width}" to "${it.height}"
+                                    }
+                                },
+                                onError = { _, error ->
+                                    logger.logError(error.throwable)
+                                    isError = true
+                                    isLoading = false
+                                }
+                            ).build(),
+                        contentDescription = null,
+                        contentScale = contentScale,
+                        onClick = {
+                            showControls = !showControls
+                        },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                translationX = swipeOffset
+                                scaleX = scaleX
+                                scaleY = scaleX
+                                alpha = opacity
+                            }
+                            .background(imageBackgroundColors[currentImageBackgroundColorIndex])
+                    )
+                }
 
                 // Extract dominant color
                 LaunchedEffect(image) {
@@ -265,7 +373,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                                 )
                                 imageInfo?.let { info ->
                                     Text(
-                                        text = "${info.size} • ${info.dimensions}",
+                                        text = "${imageInstance.currentImageIndex + 1}/${imageInstance.imageList.size} • ${info.dimensions}",
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                                         fontSize = 12.sp
                                     )
@@ -316,8 +424,8 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         onEdit = {
                             val editIntent = Intent(Intent.ACTION_EDIT)
                             val mimeType =
-                                context.contentResolver.getType(instance.uri) ?: "image/*"
-                            editIntent.setDataAndType(instance.uri, mimeType)
+                                context.contentResolver.getType(imageInstance.getCurrentImage()) ?: "image/*"
+                            editIntent.setDataAndType(imageInstance.getCurrentImage(), mimeType)
                             editIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
                             val chooser = Intent.createChooser(
                                 editIntent,
