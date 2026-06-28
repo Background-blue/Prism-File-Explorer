@@ -27,7 +27,7 @@ on:
 
 jobs:
   build:
-    name: Build release APK
+    name: Build debug APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
