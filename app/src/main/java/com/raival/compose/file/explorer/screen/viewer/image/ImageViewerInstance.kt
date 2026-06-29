@@ -13,7 +13,7 @@ class ImageViewerInstance(
     override val uri: Uri,
     override val id: String,
     val parentDirectory: File? = null
-) : ViewerInstance() {    // ✅ CORRECCIÓN: paréntesis agregados
+) : ViewerInstance() { 
 
     private val _imageList = mutableStateListOf<Uri>()
     val imageList: List<Uri> get() = _imageList
