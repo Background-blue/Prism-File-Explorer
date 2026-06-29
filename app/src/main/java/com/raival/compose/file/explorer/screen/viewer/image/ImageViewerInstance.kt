@@ -10,10 +10,10 @@ import com.raival.compose.file.explorer.screen.viewer.ViewerInstance
 import java.io.File
 
 class ImageViewerInstance(
-    override val uri: Uri,           // ✅ override correcto
-    override val id: String,         // ✅ override correcto
+    override val uri: Uri,
+    override val id: String,
     val parentDirectory: File? = null
-) : ViewerInstance() {               // ✅ paréntesis — es clase abstracta, NO interface
+) : ViewerInstance() {    // ✅ CORRECCIÓN: paréntesis agregados
 
     private val _imageList = mutableStateListOf<Uri>()
     val imageList: List<Uri> get() = _imageList
@@ -28,7 +28,6 @@ class ImageViewerInstance(
         _imageList.clear()
         _imageList.addAll(uris)
 
-        // Encontrar el índice de la imagen actual
         val currentIndex = _imageList.indexOfFirst { it == uri }
         if (currentIndex != -1) {
             _currentImageIndex = currentIndex
