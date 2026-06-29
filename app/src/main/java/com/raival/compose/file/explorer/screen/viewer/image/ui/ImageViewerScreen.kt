@@ -103,7 +103,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     val imageInstance = instance as ImageViewerInstance
     val defaultColor = MaterialTheme.colorScheme.surface
     val coroutineScope = rememberCoroutineScope()
-    
+
     var dominantColor by remember { mutableStateOf(defaultColor) }
     var secondaryColor by remember { mutableStateOf(defaultColor) }
     val imageBackgroundColors = arrayListOf(
@@ -113,7 +113,8 @@ fun ImageViewerScreen(instance: ViewerInstance) {
         Color.Black
     )
     var currentImageBackgroundColorIndex by remember { mutableIntStateOf(0) }
-    var imageData by remember { mutableStateOf(ByteArray(0)) }    var isLoading by remember { mutableStateOf(true) }
+    var imageData by remember { mutableStateOf(ByteArray(0)) }
+    var isLoading by remember { mutableStateOf(true) }
     var isError by remember { mutableStateOf(false) }
     var showControls by remember { mutableStateOf(true) }
     var showInfo by remember { mutableStateOf(false) }
@@ -122,14 +123,16 @@ fun ImageViewerScreen(instance: ViewerInstance) {
     var imageDimensions by remember { mutableStateOf("" to "") }
     var contentScale by remember { mutableStateOf(ContentScale.Fit) }
     var swipeOffset by remember { mutableFloatStateOf(0f) }
-    var isSwipingNext by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val currentImageUri by remember { mutableStateOf(imageInstance.getCurrentImage()) }
 
-    // Load image data
+    // ✅ FIX #1: Eliminada variable `currentImageUri` que estaba declarada pero nunca usada
+
+    val context = LocalContext.current
+
+    // Load image data — se re-ejecuta cada vez que cambia la imagen actual
     LaunchedEffect(imageInstance.currentImageIndex) {
         try {
             isLoading = true
+            isError = false
             imageData = imageInstance.getCurrentImage().read()
             isLoading = false
         } catch (e: Exception) {
@@ -169,56 +172,58 @@ fun ImageViewerScreen(instance: ViewerInstance) {
             })
 
             else -> {
-                // Main image with zoom, rotation and swipe
                 var image by remember { mutableStateOf<Image?>(null) }
-                var scaleX by remember { mutableFloatStateOf(1f) }
-                var opacity by remember { mutableFloatStateOf(1f) }
+
+                // ✅ FIX #2: Renombradas a imageScaleX e imageOpacity
+                // para evitar conflicto de nombres con las propiedades
+                // internas de graphicsLayer { scaleX, alpha }
+                var imageScaleX by remember { mutableFloatStateOf(1f) }
+                var imageOpacity by remember { mutableFloatStateOf(1f) }
 
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .pointerInput(Unit) {
+                        .pointerInput(imageInstance.currentImageIndex) {
+                            // ✅ FIX #3: key del pointerInput vinculada al índice
+                            // actual para reiniciar los gestos al cambiar imagen
                             detectHorizontalDragGestures(
                                 onDragEnd = {
                                     val threshold = 100f
                                     when {
                                         swipeOffset > threshold && imageInstance.hasPreviousImage() -> {
-                                            // Swipe right - previous image
                                             coroutineScope.launch {
                                                 imageInstance.previousImage()
                                                 swipeOffset = 0f
-                                                scaleX = 1f
-                                                opacity = 1f
+                                                imageScaleX = 1f   // ✅ nombre correcto
+                                                imageOpacity = 1f  // ✅ nombre correcto
                                             }
                                         }
                                         swipeOffset < -threshold && imageInstance.hasNextImage() -> {
-                                            // Swipe left - next image
                                             coroutineScope.launch {
                                                 imageInstance.nextImage()
                                                 swipeOffset = 0f
-                                                scaleX = 1f
-                                                opacity = 1f
+                                                imageScaleX = 1f   // ✅ nombre correcto
+                                                imageOpacity = 1f  // ✅ nombre correcto
                                             }
                                         }
                                         else -> {
                                             swipeOffset = 0f
-                                            scaleX = 1f
-                                            opacity = 1f
+                                            imageScaleX = 1f       // ✅ nombre correcto
+                                            imageOpacity = 1f      // ✅ nombre correcto
                                         }
                                     }
                                 },
                                 onHorizontalDrag = { _, dragAmount ->
                                     swipeOffset += dragAmount
-                                    // Progressive scale and opacity based on drag distance
-                                    val dragProgress = (swipeOffset.absoluteValue / 200f).coerceIn(0f, 1f)
-                                    scaleX = 1f - (dragProgress * 0.15f)
-                                    opacity = 1f - (dragProgress * 0.3f)
-                                    isSwipingNext = swipeOffset < 0
+                                    val dragProgress =
+                                        (swipeOffset.absoluteValue / 200f).coerceIn(0f, 1f)
+                                    imageScaleX = 1f - (dragProgress * 0.15f)  // ✅ nombre correcto
+                                    imageOpacity = 1f - (dragProgress * 0.3f)  // ✅ nombre correcto
                                 }
                             )
                         }
                 ) {
-                    // Previous image preview (right side)
+                    // Previous image preview (aparece al deslizar a la derecha)
                     if (imageInstance.hasPreviousImage() && swipeOffset > 0) {
                         Box(
                             modifier = Modifier
@@ -229,7 +234,11 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         ) {
                             ZoomableAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(imageInstance.imageList.getOrNull(imageInstance.currentImageIndex - 1))
+                                    .data(
+                                        imageInstance.imageList.getOrNull(
+                                            imageInstance.currentImageIndex - 1
+                                        )
+                                    )
                                     .build(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
@@ -238,7 +247,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         }
                     }
 
-                    // Next image preview (left side)
+                    // Next image preview (aparece al deslizar a la izquierda)
                     if (imageInstance.hasNextImage() && swipeOffset < 0) {
                         Box(
                             modifier = Modifier
@@ -249,7 +258,11 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         ) {
                             ZoomableAsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(imageInstance.imageList.getOrNull(imageInstance.currentImageIndex + 1))
+                                    .data(
+                                        imageInstance.imageList.getOrNull(
+                                            imageInstance.currentImageIndex + 1
+                                        )
+                                    )
                                     .build(),
                                 contentDescription = null,
                                 contentScale = ContentScale.Crop,
@@ -274,7 +287,8 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                                     isError = true
                                     isLoading = false
                                 }
-                            ).build(),
+                            )
+                            .build(),
                         contentDescription = null,
                         contentScale = contentScale,
                         onClick = {
@@ -284,15 +298,21 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                             .fillMaxSize()
                             .graphicsLayer {
                                 translationX = swipeOffset
-                                scaleX = scaleX
-                                scaleY = scaleX
-                                alpha = opacity
+                                // ✅ FIX #4: Usando imageScaleX e imageOpacity
+                                // en vez de scaleX y alpha que son propiedades
+                                // propias de graphicsLayer (causaban ambigüedad)
+                                scaleX = imageScaleX
+                                scaleY = imageScaleX
+                                alpha = imageOpacity
+                                // ✅ FIX #5: rotationAngle ahora SÍ se aplica
+                                // a la imagen (antes se calculaba pero se ignoraba)
+                                rotationZ = rotationAngle
                             }
                             .background(imageBackgroundColors[currentImageBackgroundColorIndex])
                     )
                 }
 
-                // Extract dominant color
+                // Extract dominant color from image
                 LaunchedEffect(image) {
                     if (image != null) {
                         val bitmap = image!!.toBitmap().copy(Bitmap.Config.ARGB_8888, false)
@@ -302,7 +322,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                     }
                 }
 
-                // Animated gradient overlay for top bar
+                // Gradient overlay — top bar
                 AnimatedVisibility(
                     visible = showControls,
                     enter = fadeIn(spring(stiffness = Spring.StiffnessMedium)),
@@ -328,7 +348,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                     )
                 }
 
-                // Animated gradient overlay for controls
+                // Gradient overlay — bottom controls
                 AnimatedVisibility(
                     modifier = Modifier.align(Alignment.BottomCenter),
                     visible = showControls,
@@ -355,7 +375,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                     )
                 }
 
-                // Top bar
+                // Top app bar
                 AnimatedVisibility(
                     visible = showControls,
                     enter = slideInVertically { -it } + fadeIn(),
@@ -371,12 +391,17 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                imageInfo?.let { info ->
-                                    Text(
-                                        text = "${imageInstance.currentImageIndex + 1}/${imageInstance.imageList.size} • ${info.dimensions}",
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                        fontSize = 12.sp
-                                    )
+                                // Contador y dimensiones solo cuando imageList tiene contenido
+                                if (imageInstance.imageList.isNotEmpty()) {
+                                    imageInfo?.let { info ->
+                                        Text(
+                                            text = "${imageInstance.currentImageIndex + 1}" +
+                                                    "/${imageInstance.imageList.size}" +
+                                                    " • ${info.dimensions}",
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             }
                         },
@@ -424,9 +449,13 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         onEdit = {
                             val editIntent = Intent(Intent.ACTION_EDIT)
                             val mimeType =
-                                context.contentResolver.getType(imageInstance.getCurrentImage()) ?: "image/*"
+                                context.contentResolver.getType(imageInstance.getCurrentImage())
+                                    ?: "image/*"
                             editIntent.setDataAndType(imageInstance.getCurrentImage(), mimeType)
-                            editIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                            editIntent.addFlags(
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            )
                             val chooser = Intent.createChooser(
                                 editIntent,
                                 globalClass.getString(R.string.edit_with)
@@ -440,7 +469,7 @@ fun ImageViewerScreen(instance: ViewerInstance) {
                         onContentScale = {
                             contentScale = it
                         },
-                        modifier = Modifier.align(Alignment.BottomCenter),
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     )
                 }
 
@@ -457,6 +486,10 @@ fun ImageViewerScreen(instance: ViewerInstance) {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Composables auxiliares
+// ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun LoadingState() {
@@ -534,13 +567,15 @@ private fun BottomControls(
     onContentScale: (contentScale: ContentScale) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val contentScales = arrayListOf<ContentScale>().apply {
-        add(ContentScale.Fit)
-        add(ContentScale.Crop)
-        add(ContentScale.FillWidth)
-        add(ContentScale.FillHeight)
-        add(ContentScale.FillBounds)
-        add(ContentScale.Inside)
+    val contentScales = remember {
+        listOf(
+            ContentScale.Fit,
+            ContentScale.Crop,
+            ContentScale.FillWidth,
+            ContentScale.FillHeight,
+            ContentScale.FillBounds,
+            ContentScale.Inside
+        )
     }
     var selectedContentScale by remember { mutableStateOf(contentScales[0]) }
 
@@ -551,42 +586,36 @@ private fun BottomControls(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Invert background colors
         ActionButton(
             icon = Icons.Default.InvertColors,
             onClick = onInvertBackgroundColors,
             backgroundColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
         )
 
-        // Fit to screen
         ActionButton(
             icon = when (selectedContentScale) {
-                ContentScale.Fit -> Icons.Default.FitScreen
-                ContentScale.Crop -> Icons.Default.Crop
+                ContentScale.Fit       -> Icons.Default.FitScreen
+                ContentScale.Crop      -> Icons.Default.Crop
                 ContentScale.FillWidth -> Icons.Default.WidthFull
                 ContentScale.FillHeight -> Icons.Default.Height
                 ContentScale.FillBounds -> Icons.Default.BorderOuter
-                else -> Icons.Default.FilterCenterFocus
+                else                   -> Icons.Default.FilterCenterFocus
             },
             onClick = {
-                val currentScaleIndex = contentScales.indexOf(selectedContentScale)
-                selectedContentScale = contentScales[
-                    if (currentScaleIndex == contentScales.lastIndex) 0
-                    else currentScaleIndex + 1
-                ]
+                val nextIndex =
+                    (contentScales.indexOf(selectedContentScale) + 1) % contentScales.size
+                selectedContentScale = contentScales[nextIndex]
                 onContentScale(selectedContentScale)
             },
             backgroundColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
         )
 
-        // Rotate
         ActionButton(
             icon = Icons.AutoMirrored.Filled.RotateRight,
             onClick = onRotate,
             backgroundColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
         )
 
-        // Edit
         ActionButton(
             icon = Icons.Default.Edit,
             onClick = onEdit,
@@ -624,9 +653,7 @@ private fun ImageInfoBottomSheet(
     imageInfo: ImageInfo,
     onDismiss: () -> Unit
 ) {
-    val bottomSheetState = rememberModalBottomSheetState(
-        skipPartiallyExpanded = true
-    )
+    val bottomSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
