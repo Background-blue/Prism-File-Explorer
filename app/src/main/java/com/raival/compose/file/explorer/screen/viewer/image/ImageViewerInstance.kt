@@ -13,7 +13,7 @@ class ImageViewerInstance(
     override val uri: Uri,
     override val id: String,
     val parentDirectory: File? = null
-) : ViewerInstance() { 
+) : ViewerInstance {
 
     private val _imageList = mutableStateListOf<Uri>()
     val imageList: List<Uri> get() = _imageList
@@ -40,25 +40,39 @@ class ImageViewerInstance(
         }
     }
 
-    fun getCurrentImage(): Uri = if (_currentImageIndex in _imageList.indices) {
-        _imageList[_currentImageIndex]
-    } else {
-        uri
+    fun getCurrentImage(): Uri {
+        return if (_currentImageIndex in _imageList.indices) {
+            _imageList[_currentImageIndex]
+        } else {
+            uri
+        }
     }
 
-    fun hasNextImage(): Boolean = _currentImageIndex < _imageList.size - 1
+    fun hasNextImage(): Boolean {
+        return _currentImageIndex < _imageList.size - 1
+    }
 
-    fun hasPreviousImage(): Boolean = _currentImageIndex > 0
+    fun hasPreviousImage(): Boolean {
+        return _currentImageIndex > 0
+    }
 
-    fun nextImage(): Uri? = if (hasNextImage()) {
-        _currentImageIndex++
-        _imageList[_currentImageIndex]
-    } else null
+    fun nextImage(): Uri? {
+        return if (hasNextImage()) {
+            _currentImageIndex++
+            _imageList[_currentImageIndex]
+        } else {
+            null
+        }
+    }
 
-    fun previousImage(): Uri? = if (hasPreviousImage()) {
-        _currentImageIndex--
-        _imageList[_currentImageIndex]
-    } else null
+    fun previousImage(): Uri? {
+        return if (hasPreviousImage()) {
+            _currentImageIndex--
+            _imageList[_currentImageIndex]
+        } else {
+            null
+        }
+    }
 
     override fun onClose() {
         _imageList.clear()
